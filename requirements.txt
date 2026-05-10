@@ -1,5 +1,4 @@
 streamlit
-yfinance
-pandas==2.2.2
-pandas_ta
+pandas
 plotly
+investpy
