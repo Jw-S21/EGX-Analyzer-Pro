@@ -5,11 +5,11 @@ import requests
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 
-# محاولة استدعاء مكتبة التحليل الفني بأمان لتجنب توقف التطبيق
+# استدعاء مكتبة التحليل الفني مع معالجة الخطأ في حال عدم وجودها لمنع التطبيق من الإغلاق
 try:
     import pandas_ta as ta
-except Exception:
-    pass
+except ImportError:
+    st.error("مكتبة pandas_ta غير مثبتة. يرجى التأكد من إضافتها لملف requirements.txt")
 
 # --- 1. إعدادات الصفحة والتنسيق ---
 st.set_page_config(page_title="بورصة الوحيد Pro", layout="wide", initial_sidebar_state="expanded")
@@ -67,7 +67,12 @@ tab1, tab2, tab3, tab4 = st.tabs(["📊 التحليل الفني", "📰 الأ
 # جلب البيانات
 @st.cache_data(ttl=3600)
 def get_data(t):
-    return yf.download(t, period="2y", interval="1d", progress=False)
+    try:
+        data = yf.download(t, period="2y", interval="1d", progress=False)
+        return data
+    except Exception as e:
+        st.error(f"خطأ في جلب البيانات: {e}")
+        return pd.DataFrame()
 
 df = get_data(ticker)
 
@@ -75,7 +80,6 @@ with tab1:
     if not df.empty:
         col_chart, col_stats = st.columns([3, 1])
         with col_chart:
-            # شارت ترادينج فيو المباشر
             tv_html = f"""
             <div style="height:550px;">
                 <div id="tv_chart" style="height:100%;"></div>
@@ -91,12 +95,17 @@ with tab1:
             components.html(tv_html, height=560)
             
         with col_stats:
-            last_price = float(df['Close'].iloc[-1])
+            # التأكد من التعامل مع السعر كقيمة رقمية مفردة
+            current_close = df['Close'].iloc[-1]
+            last_price = float(current_close.iloc[0] if isinstance(current_close, pd.Series) else current_close)
+            
             st.markdown(f'<div class="metric-card"><h3>السعر</h3><h2>{last_price:.2f}</h2></div>', unsafe_allow_html=True)
             
             # حساب المتوسطات
             for ma_val in [21, 50, 100, 200]:
-                ma = df['Close'].rolling(ma_val).mean().iloc[-1]
+                ma_series = df['Close'].rolling(ma_val).mean().iloc[-1]
+                ma = float(ma_series.iloc[0] if isinstance(ma_series, pd.Series) else ma_series)
+                
                 status = "✅ فوق" if last_price > ma else "❌ تحت"
                 color = "status-up" if last_price > ma else "status-down"
                 st.markdown(f"MA {ma_val}: <span class='{color}'>{status}</span>", unsafe_allow_html=True)
@@ -108,4 +117,5 @@ with tab2:
 
 with tab4:
     st.markdown("### 💧 سجل السيولة (آخر 5 أيام)")
-    st.table(df[['Close', 'Volume']].tail(5))
+    if not df.empty:
+        st.table(df[['Close', 'Volume']].tail(5))
